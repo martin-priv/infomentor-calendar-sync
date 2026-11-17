@@ -65,7 +65,7 @@ class InfomentorAIAgent:
                 "temperature": 0.2
             }
             url = f"{self.base_url}/chat/completions"
-            for attempt in range(2):
+            for attempt in range(3):
                 try:
                     resp = requests.post(url, headers=headers, json=payload, timeout=120)
                     if resp.status_code == 200:
@@ -74,10 +74,10 @@ class InfomentorAIAgent:
                     else:
                         raise RuntimeError(f"OpenAI API error {resp.status_code}: {resp.text}")
                 except Exception as ex:
-                    if attempt == 1:
+                    if attempt == 2:
                         raise
                     print(f"   ⚠️ OpenAI request attempt {attempt + 1} failed ({ex}), retrying...")
-                    time.sleep(2)
+                    time.sleep(3)
         else:
             # Gemini provider
             payload = {
@@ -87,7 +87,7 @@ class InfomentorAIAgent:
                     "temperature": 0.2
                 }
             }
-            for attempt in range(2):
+            for attempt in range(3):
                 try:
                     resp = requests.post(self.endpoint, json=payload, timeout=120)
                     if resp.status_code == 200:
@@ -99,10 +99,10 @@ class InfomentorAIAgent:
                     else:
                         raise RuntimeError(f"Gemini API error {resp.status_code}: {resp.text}")
                 except Exception as ex:
-                    if attempt == 1:
+                    if attempt == 2:
                         raise
                     print(f"   ⚠️ Gemini request attempt {attempt + 1} failed ({ex}), retrying...")
-                    time.sleep(2)
+                    time.sleep(3)
         return "{}"
 
     def synthesize_events(
