@@ -1,0 +1,12 @@
+# Secrets
+.env
+service_account.json
+*.json
+!package.json
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
