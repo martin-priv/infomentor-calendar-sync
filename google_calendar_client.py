@@ -44,14 +44,14 @@ class GoogleCalendarClient:
         Creates or updates a Google Calendar event.
         event_data format:
         {
-            "summary": "Leo: Matteprov Kapitel 2",
+            "summary": "Elev: Matteprov Kapitel 2",
             "description": "...",
             "start": "2026-11-20T09:00:00+01:00" or "2026-11-20",
             "end": "2026-11-20T10:00:00+01:00" or "2026-11-20",
             "is_all_day": False,
             "location": "...",
             "infomentor_id": "cal_223855849",
-            "child_name": "Leo"
+            "child_name": "Elev"
         }
         """
         infomentor_id = str(event_data.get("infomentor_id", ""))

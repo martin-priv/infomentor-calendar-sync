@@ -70,7 +70,7 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
     for pupil in client.pupils:
         full_name = pupil["name"]
         short_name = full_name.split(",")[0].strip() if "," in full_name else full_name.split()[0]
-        # In InfoMentor: "Hedström, Leo" -> short_name is "Leo" if reversed
+        # In InfoMentor: "Efternamn, Förnamn" -> extract first name
         parts = [p.strip() for p in full_name.split(",")]
         first_name = parts[1] if len(parts) > 1 else parts[0]
 
@@ -157,7 +157,7 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sync InfoMentor events to Google Calendar")
-    parser.add_argument("--child", type=str, help="Filter by child name (e.g. Leo, Adam, Isak)")
+    parser.add_argument("--child", type=str, help="Filter by child name (e.g. förnamn)")
     parser.add_argument("--dry-run", action="store_true", help="Print synthesized events without pushing to Google Calendar")
     parser.add_argument("--days", type=int, default=45, help="Number of days ahead to sync (default: 45)")
     parser.add_argument("--calendar-id", type=str, help="Override Google Calendar ID")

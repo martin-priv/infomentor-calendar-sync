@@ -8,7 +8,7 @@ Headless Python-tjänst som pollar **InfoMentor** för barnens aktiviteter, synt
 
 1. **Headless InfoMentor-inloggning:**
    - Loggar in automatiskt med användarnamn & lösenord via ASP.NET WebForm / OAuth-bridge till `hub.infomentor.se` (inget BankID krävs).
-   - Växlar automatiskt mellan alla barn (**Adam**, **Isak**, **Leo**).
+   - Växlar automatiskt mellan alla dina barn som finns registrerade på kontot.
 
 2. **Multikälls-insamling & AI-syntes (Gemini):**
    - Samlar in data från 3 separata delar av InfoMentor:
@@ -50,9 +50,7 @@ python3 sync.py --dry-run
 
 ### Synka ett specifikt barn:
 ```bash
-python3 sync.py --child Leo
-python3 sync.py --child Adam
-python3 sync.py --child Isak
+python3 sync.py --child "Förnamn"
 ```
 
 ### Automatisk schemaläggning (Cron):

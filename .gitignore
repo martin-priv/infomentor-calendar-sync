@@ -1,12 +1,33 @@
-# Secrets
+# Environment & Secrets
 .env
-service_account.json
+.env.*
+!.env.example
+service_account*.json
+*credentials*.json
 *.json
 !package.json
+!tsconfig.json
+*.pem
+*.key
+
+# Logs & temp files
+*.log
+sync.log
 
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+ENV/
+env/
 
-# OS
+# OS & IDE
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
