@@ -72,6 +72,10 @@ class GoogleCalendarClient:
         if event_data.get("location"):
             body["location"] = event_data["location"]
 
+        color_id = event_data.get("color_id") or event_data.get("colorId")
+        if color_id:
+            body["colorId"] = str(color_id)
+
         if event_data.get("is_all_day"):
             s_date = event_data["start"][:10]
             e_date = event_data["end"][:10] if event_data.get("end") else s_date

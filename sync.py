@@ -68,6 +68,18 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
         t = text.lower()
         return any(p in t for p in exclude_patterns)
 
+    # Child color mapping: "Adam:9,Isak:10,Leo:4" or default soft palette
+    # Google Calendar colors: 9=Blueberry (#5484ed), 10=Basil (#51b749), 4=Flamingo (#ff887c), 7=Peacock (#46d6db), 3=Grape (#dbadff)
+    child_colors_config = {}
+    raw_colors = os.environ.get("CHILD_COLORS", "")
+    if raw_colors:
+        for pair in raw_colors.split(","):
+            if ":" in pair:
+                cname, cid = pair.split(":", 1)
+                child_colors_config[cname.strip().lower()] = cid.strip()
+
+    DEFAULT_PALETTE = ["9", "10", "4", "7", "3", "6", "2", "1"]
+
     print(f"🔄 Starting InfoMentor Sync (Window: {sync_days} days, DryRun: {dry_run})")
     print(f"🔑 Using InfoMentor account: {im_user}")
     if exclude_patterns:
@@ -109,7 +121,7 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
     all_synthesized_events = []
 
     # Step 4: Loop through pupils
-    for pupil in client.pupils:
+    for child_idx, pupil in enumerate(client.pupils):
         full_name = pupil["name"]
         short_name = full_name.split(",")[0].strip() if "," in full_name else full_name.split()[0]
         # In InfoMentor: "Efternamn, Förnamn" -> extract first name
@@ -120,7 +132,8 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
             print(f"⏭️ Skipping {full_name} (filtered)")
             continue
 
-        print(f"\n👤 Processing: {first_name} ({full_name})...")
+        child_color = child_colors_config.get(first_name.lower()) or DEFAULT_PALETTE[child_idx % len(DEFAULT_PALETTE)]
+        print(f"\n👤 Processing: {first_name} ({full_name}) [Color: {child_color}]...")
         client.switch_pupil(pupil["switch_url"])
 
         # Fetch raw calendar
@@ -249,8 +262,10 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
 
         for ev in synthesized:
             ev["child_first_name"] = first_name
+            ev["color_id"] = child_color
             all_synthesized_events.append(ev)
         for ev in school_day_events:
+            ev["color_id"] = child_color
             all_synthesized_events.append(ev)
 
     # Step 5: Push to Google Calendar or Print (Dry-run)
