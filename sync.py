@@ -276,6 +276,10 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
         clean_existing = []
         purged_count = 0
         for ev in existing:
+            if ev.get("status") == "cancelled":
+                clean_existing.append(ev)
+                continue
+
             summary = ev.get("summary", "")
             props = ev.get("extendedProperties", {}).get("private", {})
             im_id = props.get("infomentor_id", "")
@@ -327,12 +331,21 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
     print(f"\n🚀 Pushing events to Google Calendar ({calendar_id})...")
     created_count = 0
     updated_count = 0
+    preserved_count = 0
+    skipped_deleted_count = 0
 
     for ev in all_synthesized_events:
         res = gcal.upsert_event(ev, existing_events=existing)
-        if res.get("action") == "created":
+        act = res.get("action")
+        if act == "created":
             created_count += 1
             print(f"   ➕ Created: {res.get('summary')}")
+        elif act == "updated_preserved":
+            preserved_count += 1
+            print(f"   🛡️ Preserved user modifications: {res.get('summary')}")
+        elif act == "skipped_deleted":
+            skipped_deleted_count += 1
+            print(f"   🚫 Skipped deleted event: {res.get('summary')}")
         else:
             updated_count += 1
             print(f"   🔄 Updated: {res.get('summary')}")
@@ -340,6 +353,10 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
     print("\n✅ Sync completed successfully!")
     print(f"   🎉 Created: {created_count} events")
     print(f"   🔄 Updated: {updated_count} events")
+    if preserved_count > 0:
+        print(f"   🛡️ Preserved user changes: {preserved_count} events")
+    if skipped_deleted_count > 0:
+        print(f"   🚫 Skipped user-deleted: {skipped_deleted_count} events")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sync InfoMentor events to Google Calendar")

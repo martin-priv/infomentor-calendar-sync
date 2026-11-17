@@ -21,7 +21,7 @@ class GoogleCalendarClient:
     def get_existing_events(self, time_min: str, time_max: str) -> List[Dict[str, Any]]:
         """
         Fetches events in date range that were synced from InfoMentor.
-        time_min and time_max should be RFC3339 strings (e.g. '2026-11-17T00:00:00Z')
+        Includes cancelled/deleted events so user deletions can be respected.
         """
         events = []
         page_token = None
@@ -30,6 +30,7 @@ class GoogleCalendarClient:
                 calendarId=self.calendar_id,
                 timeMin=time_min,
                 timeMax=time_max,
+                showDeleted=True,
                 singleEvents=True,
                 pageToken=page_token
             ).execute()
@@ -102,22 +103,85 @@ class GoogleCalendarClient:
 
         # Check if already exists in existing_events or search by private extended property
         existing_id = None
+        existing_event = None
         if existing_events:
             for ev in existing_events:
                 props = ev.get("extendedProperties", {}).get("private", {})
                 if props.get("infomentor_id") == infomentor_id and infomentor_id:
                     existing_id = ev["id"]
+                    existing_event = ev
                     break
 
         if not existing_id and infomentor_id:
             # Search by private extended property
             res = self.service.events().list(
                 calendarId=self.calendar_id,
-                privateExtendedProperty=f"infomentor_id={infomentor_id}"
+                privateExtendedProperty=f"infomentor_id={infomentor_id}",
+                showDeleted=True
             ).execute()
             items = res.get("items", [])
             if items:
                 existing_id = items[0]["id"]
+                existing_event = items[0]
+
+        # Respect User Deletions (Alternative A)
+        if existing_event and existing_event.get("status") == "cancelled":
+            return {"action": "skipped_deleted", "id": existing_id, "summary": event_data["summary"]}
+
+        # Respect User Modifications (Alternative A)
+        user_modified_summary = False
+        user_modified_time = False
+        user_modified_desc = False
+
+        if existing_event and existing_event.get("status") != "cancelled":
+            ex_props = existing_event.get("extendedProperties", {}).get("private", {})
+            last_summary = ex_props.get("last_synced_summary")
+            last_start = ex_props.get("last_synced_start")
+            last_end = ex_props.get("last_synced_end")
+            last_desc = ex_props.get("last_synced_desc")
+
+            # Explicit lock tag 🔒 or [manuell] in title or description
+            ex_summary = existing_event.get("summary", "")
+            ex_desc = existing_event.get("description", "")
+            if "🔒" in ex_summary or "[manuell]" in ex_summary.lower() or "🔒" in ex_desc:
+                user_modified_summary = True
+                user_modified_time = True
+                user_modified_desc = True
+
+            # Check if user customized the title
+            if last_summary and ex_summary != last_summary:
+                user_modified_summary = True
+            elif not last_summary and ex_summary and ex_summary != event_data["summary"]:
+                user_modified_summary = True
+
+            # Check if user customized the time
+            ex_s = existing_event.get("start", {}).get("dateTime") or existing_event.get("start", {}).get("date")
+            ex_e = existing_event.get("end", {}).get("dateTime") or existing_event.get("end", {}).get("date")
+            if last_start and (ex_s != last_start or ex_e != last_end):
+                user_modified_time = True
+
+            # Check if user customized description
+            if last_desc and ex_desc != last_desc:
+                user_modified_desc = True
+
+            # Preserve user modifications
+            if user_modified_summary:
+                body["summary"] = ex_summary
+            if user_modified_time:
+                body["start"] = existing_event["start"]
+                body["end"] = existing_event["end"]
+            if user_modified_desc:
+                body["description"] = ex_desc
+
+        # Track what we sync so future runs know if user modified it
+        sync_start_val = body["start"].get("dateTime") or body["start"].get("date")
+        sync_end_val = body["end"].get("dateTime") or body["end"].get("date")
+        body["extendedProperties"]["private"]["last_synced_summary"] = body["summary"]
+        body["extendedProperties"]["private"]["last_synced_start"] = sync_start_val
+        body["extendedProperties"]["private"]["last_synced_end"] = sync_end_val
+        body["extendedProperties"]["private"]["last_synced_desc"] = body.get("description", "")
+        if user_modified_summary or user_modified_time or user_modified_desc:
+            body["extendedProperties"]["private"]["user_modified"] = "true"
 
         if existing_id:
             updated = self.service.events().update(
@@ -125,7 +189,8 @@ class GoogleCalendarClient:
                 eventId=existing_id,
                 body=body
             ).execute()
-            return {"action": "updated", "id": existing_id, "summary": updated.get("summary")}
+            action = "updated_preserved" if (user_modified_summary or user_modified_time) else "updated"
+            return {"action": action, "id": existing_id, "summary": updated.get("summary")}
         else:
             created = self.service.events().insert(
                 calendarId=self.calendar_id,
