@@ -227,12 +227,17 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
                     extra_str = f" ({', '.join(extra)})" if extra else ""
                     desc_lines.append(f"• {l['startTime']}–{l['endTime']}: {l['subject']}{extra_str}")
 
+                # Compact 15-minute slot at start time to avoid massive overlapping blocks
+                s_dt = datetime.strptime(f"{day}T{first_start}:00", "%Y-%m-%dT%H:%M:%S")
+                e_dt = s_dt + timedelta(minutes=15)
+                end_iso = e_dt.strftime("%Y-%m-%dT%H:%M:%S+01:00")
+
                 school_day_events.append({
                     "infomentor_id": f"schoolday_{pupil_id}_{day}",
                     "summary": f"{first_name}: Skola {first_start}–{last_end}",
                     "description": "\n".join(desc_lines),
                     "start": f"{day}T{first_start}:00+01:00",
-                    "end": f"{day}T{last_end}:00+01:00",
+                    "end": end_iso,
                     "is_all_day": False,
                     "location": "",
                     "event_type": "SCHOOL_DAY",
