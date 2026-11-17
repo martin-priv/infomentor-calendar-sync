@@ -14,7 +14,7 @@ from infomentor_client import InfomentorClient
 from ai_agent import InfomentorAIAgent
 from google_calendar_client import GoogleCalendarClient
 
-def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 45, custom_calendar_id: str = None):
+def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 45, custom_calendar_id: str = None, custom_exclude: str = None):
     # Load configuration
     env_path = os.path.join(os.path.dirname(__file__), ".env")
     load_dotenv(env_path)
@@ -31,8 +31,20 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
 
     calendar_id = custom_calendar_id or os.environ.get("GOOGLE_CALENDAR_ID")
 
+    # Exclusion patterns (comma-separated, case-insensitive)
+    exclude_raw = custom_exclude or os.environ.get("EXCLUDE_PATTERNS", "Studion öppen")
+    exclude_patterns = [p.strip().lower() for p in exclude_raw.split(",") if p.strip()]
+
+    def is_excluded(text: str) -> bool:
+        if not text:
+            return False
+        t = text.lower()
+        return any(p in t for p in exclude_patterns)
+
     print(f"🔄 Starting InfoMentor Sync (Window: {days_ahead} days, DryRun: {dry_run})")
     print(f"🔑 Using InfoMentor account: {im_user}")
+    if exclude_patterns:
+        print(f"🚫 Active exclusion filter: {', '.join(exclude_patterns)}")
 
     # Step 1: Connect to InfoMentor
     client = InfomentorClient()
@@ -84,7 +96,14 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
         # Fetch raw calendar
         print(f"   📥 Fetching calendar ({start_date} to {end_date})...")
         cal_entries = client.get_calendar(start_date, end_date)
-        print(f"      Found {len(cal_entries)} raw calendar entries.")
+        raw_count = len(cal_entries)
+        # Apply pre-filter to drop excluded events before AI
+        cal_entries = [c for c in cal_entries if not is_excluded(c.get("title") or c.get("text", ""))]
+        filtered_count = raw_count - len(cal_entries)
+        if filtered_count > 0:
+            print(f"      Found {raw_count} entries (filtered out {filtered_count} matching exclusion patterns).")
+        else:
+            print(f"      Found {raw_count} raw calendar entries.")
 
         # Fetch UOLs (planeringar)
         print("   📥 Fetching planeringar (UOL)...")
@@ -112,6 +131,10 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
             uols=uols,
             messages=raw_msgs
         )
+
+        # Post-filter synthesized events
+        synthesized = [ev for ev in synthesized if not is_excluded(ev.get("summary", ""))]
+
         print(f"   ✨ Generated {len(synthesized)} synthesized events for {first_name}.")
         for ev in synthesized:
             ev["child_first_name"] = first_name
@@ -119,6 +142,31 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
 
     # Step 5: Push to Google Calendar or Print (Dry-run)
     print(f"\n📊 Total synthesized events across children: {len(all_synthesized_events)}")
+
+    # Check existing events and purge any previously synced events that match exclusion list
+    time_min = f"{start_date}T00:00:00Z"
+    time_max = f"{end_date}T23:59:59Z"
+
+    if not dry_run and gcal:
+        existing = gcal.get_existing_events(time_min, time_max)
+        print(f"   Found {len(existing)} existing events currently in calendar window.")
+
+        # Purge excluded events
+        clean_existing = []
+        purged_count = 0
+        for ev in existing:
+            summary = ev.get("summary", "")
+            props = ev.get("extendedProperties", {}).get("private", {})
+            if (props.get("source") == "infomentor_sync" or props.get("infomentor_id")) and is_excluded(summary):
+                gcal.delete_event(ev["id"])
+                print(f"   🗑️ Purged excluded event: {summary}")
+                purged_count += 1
+            else:
+                clean_existing.append(ev)
+
+        if purged_count > 0:
+            print(f"   🧹 Purged {purged_count} excluded events from Google Calendar.")
+        existing = clean_existing
 
     if dry_run or not gcal:
         print("\n🔍 DRY RUN SUMMARY (Events that would be synced):")
@@ -137,10 +185,6 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
     print(f"\n🚀 Pushing events to Google Calendar ({calendar_id})...")
     created_count = 0
     updated_count = 0
-    time_min = f"{start_date}T00:00:00Z"
-    time_max = f"{end_date}T23:59:59Z"
-    existing = gcal.get_existing_events(time_min, time_max)
-    print(f"   Found {len(existing)} existing events currently in calendar window.")
 
     for ev in all_synthesized_events:
         res = gcal.upsert_event(ev, existing_events=existing)
@@ -161,11 +205,13 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true", help="Print synthesized events without pushing to Google Calendar")
     parser.add_argument("--days", type=int, default=45, help="Number of days ahead to sync (default: 45)")
     parser.add_argument("--calendar-id", type=str, help="Override Google Calendar ID")
+    parser.add_argument("--exclude", type=str, help="Comma-separated patterns to exclude (e.g. 'Studion öppen,Fritids')")
     args = parser.parse_args()
 
     run_sync(
         child_filter=args.child,
         dry_run=args.dry_run,
         days_ahead=args.days,
-        custom_calendar_id=args.calendar_id
+        custom_calendar_id=args.calendar_id,
+        custom_exclude=args.exclude
     )

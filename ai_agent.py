@@ -111,7 +111,10 @@ REGLER OCH RIKTLINJER:
    - Granska lärarens meddelanden. Om ett meddelande nämner att en lektion är inställd, att skoldagen börjar senare (t.ex. kl 09:00 i stället för 08:15) eller slutar tidigare:
      Skapa en kalenderhändelse för den berörda dagen/tiden med varningsemblemet ⚠️ så föräldern ser det direkt!
 
-4. ID OCH SPÅRBARHET:
+4. EXKLUDERA RUTIN- OCH DROP-IN-AKTIVITETER:
+   - Ta INTE med vanliga schemalagda drop-in-studiestugor eller läxhjälp (t.ex. "Studion öppen") eller allmän fritidspassning om det inte rör sig om en specifik prov/inlämningsdeadline eller avvikelse.
+
+5. ID OCH SPÅRBARHET:
    - Ange ett unikt `infomentor_id` för varje händelse så att vi kan uppdatera den utan dubbletter:
      T.ex. "cal_<id>" om baserad på kalenderpost, "msg_<id>" om baserad på meddelande, eller "uol_<id>".
 
