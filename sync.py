@@ -41,7 +41,7 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
     env_path = os.path.join(os.path.dirname(__file__), ".env")
     load_dotenv(env_path)
 
-    sync_days = days_ahead or int(os.environ.get("SYNC_DAYS_AHEAD", "14"))
+    sync_days = days_ahead or int(os.environ.get("SYNC_DAYS_AHEAD", "7"))
 
     im_user = os.environ.get("INFOMENTOR_USERNAME")
     im_pass = os.environ.get("INFOMENTOR_PASSWORD")
@@ -345,7 +345,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sync InfoMentor events to Google Calendar")
     parser.add_argument("--child", type=str, help="Filter by child name (e.g. förnamn)")
     parser.add_argument("--dry-run", action="store_true", help="Print synthesized events without pushing to Google Calendar")
-    parser.add_argument("--days", type=int, default=14, help="Number of days ahead to sync (default: 14)")
+    parser.add_argument("--days", type=int, default=None, help="Number of days ahead to sync (default: from .env or 7)")
     parser.add_argument("--calendar-id", type=str, help="Override Google Calendar ID")
     parser.add_argument("--exclude", type=str, help="Comma-separated patterns to exclude (e.g. 'Studion öppen,Fritids')")
     parser.add_argument("--no-school-hours", action="store_true", help="Do not create daily school hours overview events")
