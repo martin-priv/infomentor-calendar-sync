@@ -15,12 +15,95 @@ def clean_html(raw_html: Optional[str]) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 class InfomentorAIAgent:
-    def __init__(self, api_key: Optional[str] = None, model: str = "models/gemini-flash-latest"):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY is required for InfomentorAIAgent")
-        self.model = model
-        self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/{self.model}:generateContent?key={self.api_key}"
+    def __init__(
+        self,
+        provider: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        base_url: Optional[str] = None
+    ):
+        openai_key = os.environ.get("OPENAI_API_KEY")
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+
+        chosen_provider = provider or os.environ.get("AI_PROVIDER")
+        if not chosen_provider:
+            if openai_key and not gemini_key:
+                chosen_provider = "openai"
+            else:
+                chosen_provider = "gemini"
+
+        self.provider = chosen_provider.lower().strip()
+        if self.provider in ("openai", "open-ai"):
+            self.provider = "openai"
+            self.api_key = api_key or openai_key
+            if not self.api_key:
+                raise ValueError("OPENAI_API_KEY is required when using OpenAI provider")
+            self.model = model or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+            self.base_url = (base_url or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
+        else:
+            self.provider = "gemini"
+            self.api_key = api_key or gemini_key
+            if not self.api_key:
+                raise ValueError("GEMINI_API_KEY or OPENAI_API_KEY is required for InfomentorAIAgent")
+            self.model = model or os.environ.get("GEMINI_MODEL", "models/gemini-flash-latest")
+            self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/{self.model}:generateContent?key={self.api_key}"
+
+    def _call_llm(self, prompt: str) -> str:
+        """Executes the prompt against the configured LLM provider (OpenAI or Gemini)"""
+        if self.provider == "openai":
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": "You are an intelligent school assistant that outputs only valid JSON conforming strictly to the requested schema."},
+                    {"role": "user", "content": prompt}
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.2
+            }
+            url = f"{self.base_url}/chat/completions"
+            for attempt in range(2):
+                try:
+                    resp = requests.post(url, headers=headers, json=payload, timeout=120)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        return data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+                    else:
+                        raise RuntimeError(f"OpenAI API error {resp.status_code}: {resp.text}")
+                except Exception as ex:
+                    if attempt == 1:
+                        raise
+                    print(f"   ⚠️ OpenAI request attempt {attempt + 1} failed ({ex}), retrying...")
+                    time.sleep(2)
+        else:
+            # Gemini provider
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "response_mime_type": "application/json",
+                    "temperature": 0.2
+                }
+            }
+            for attempt in range(2):
+                try:
+                    resp = requests.post(self.endpoint, json=payload, timeout=120)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        candidates = data.get("candidates", [])
+                        if not candidates:
+                            return "{}"
+                        return candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+                    else:
+                        raise RuntimeError(f"Gemini API error {resp.status_code}: {resp.text}")
+                except Exception as ex:
+                    if attempt == 1:
+                        raise
+                    print(f"   ⚠️ Gemini request attempt {attempt + 1} failed ({ex}), retrying...")
+                    time.sleep(2)
+        return "{}"
 
     def synthesize_events(
         self,
@@ -159,36 +242,7 @@ REGLER OCH RIKTLINJER:
    }}
 """
 
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "temperature": 0.2
-            }
-        }
-
-        resp = None
-        for attempt in range(2):
-            try:
-                resp = requests.post(self.endpoint, json=payload, timeout=120)
-                if resp.status_code == 200:
-                    break
-            except Exception as ex:
-                if attempt == 1:
-                    raise
-                print(f"   ⚠️ Gemini request attempt {attempt + 1} failed ({ex}), retrying...")
-                time.sleep(2)
-
-        if not resp or resp.status_code != 200:
-            err_msg = resp.text if resp else "No response"
-            raise RuntimeError(f"Gemini API error: {resp.status_code if resp else 'None'} - {err_msg}")
-
-        data = resp.json()
-        candidates = data.get("candidates", [])
-        if not candidates:
-            return []
-
-        text_content = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+        text_content = self._call_llm(prompt)
         try:
             parsed = json.loads(text_content)
             events = parsed.get("events", [])
@@ -196,5 +250,5 @@ REGLER OCH RIKTLINJER:
                 e["child_name"] = first_name
             return events
         except Exception as ex:
-            print(f"Failed to parse Gemini JSON output: {ex}")
+            print(f"Failed to parse {self.provider.upper()} JSON output: {ex}")
             return []

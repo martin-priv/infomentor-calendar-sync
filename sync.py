@@ -85,6 +85,7 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
 
     # Step 2: Initialize AI Agent
     ai_agent = InfomentorAIAgent()
+    print(f"🤖 AI Provider: {ai_agent.provider.upper()} (Model: {ai_agent.model})")
 
     # Step 3: Initialize Google Calendar Client (if not dry run)
     gcal = None
