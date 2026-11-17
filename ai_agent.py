@@ -170,7 +170,7 @@ REGLER OCH RIKTLINJER:
         resp = None
         for attempt in range(2):
             try:
-                resp = requests.post(self.endpoint, json=payload, timeout=90)
+                resp = requests.post(self.endpoint, json=payload, timeout=120)
                 if resp.status_code == 200:
                     break
             except Exception as ex:

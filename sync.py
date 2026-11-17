@@ -36,10 +36,12 @@ SUBJECT_MAP = {
 }
 NON_LESSONS = {"RAST", "LUNCH", "Förflyttning", "Ombyte"}
 
-def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 45, custom_calendar_id: str = None, custom_exclude: str = None, sync_school_hours: bool = True):
+def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = None, custom_calendar_id: str = None, custom_exclude: str = None, sync_school_hours: bool = True):
     # Load configuration
     env_path = os.path.join(os.path.dirname(__file__), ".env")
     load_dotenv(env_path)
+
+    sync_days = days_ahead or int(os.environ.get("SYNC_DAYS_AHEAD", "14"))
 
     im_user = os.environ.get("INFOMENTOR_USERNAME")
     im_pass = os.environ.get("INFOMENTOR_PASSWORD")
@@ -66,7 +68,7 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
         t = text.lower()
         return any(p in t for p in exclude_patterns)
 
-    print(f"🔄 Starting InfoMentor Sync (Window: {days_ahead} days, DryRun: {dry_run})")
+    print(f"🔄 Starting InfoMentor Sync (Window: {sync_days} days, DryRun: {dry_run})")
     print(f"🔑 Using InfoMentor account: {im_user}")
     if exclude_patterns:
         print(f"🚫 Active exclusion filter: {', '.join(exclude_patterns)}")
@@ -101,7 +103,7 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
             sys.exit(1)
 
     start_date = datetime.now().strftime("%Y-%m-%d")
-    end_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+    end_date = (datetime.now() + timedelta(days=sync_days)).strftime("%Y-%m-%d")
 
     all_synthesized_events = []
 
@@ -135,15 +137,15 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
         # Fetch UOLs (planeringar)
         print("   📥 Fetching planeringar (UOL)...")
         uols = client.get_uols()
-        print(f"      Found {len(uols)} active planeringar. Enriching details...")
-        for u in uols:
+        print(f"      Found {len(uols)} active planeringar. Enriching top {min(len(uols), 5)}...")
+        for u in uols[:5]:
             detail = client.get_uol_details(u["id"])
             if detail:
                 u.update(detail)
 
         # Fetch messages
         print("   📥 Fetching teacher messages...")
-        raw_msgs = client.get_messages()[:8]
+        raw_msgs = client.get_messages()[:5]
         for m in raw_msgs:
             detail = client.get_message_detail(m["id"])
             if detail:
@@ -181,14 +183,24 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
             })
         print(f"      Found schedule across {len(clean_sched_by_day)} school days.")
 
+        # Filter schedule for AI to focus on days with events + upcoming 7 days
+        event_days = set()
+        for c in cal_entries:
+            d = c.get("startDate") or (c.get("startDateFull", "")[:10] if c.get("startDateFull") else "")
+            if d:
+                event_days.add(d)
+        for i in range(7):
+            event_days.add((datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d"))
+        sched_for_ai = {d: clean_sched_by_day[d] for d in clean_sched_by_day if d in event_days}
+
         # AI Synthesis (with timetable slotting & message precedence)
-        print("   🧠 Synthesizing with Gemini AI Agent (with timetable slotting)...")
+        print(f"   🧠 Synthesizing with Gemini AI Agent ({len(sched_for_ai)} schedule days in prompt)...")
         synthesized = ai_agent.synthesize_events(
             child_name=f"{first_name} {parts[0]}" if len(parts) > 1 else first_name,
             calendar_entries=cal_entries,
-            uols=uols,
+            uols=uols[:5],
             messages=raw_msgs,
-            schedule_by_day=clean_sched_by_day
+            schedule_by_day=sched_for_ai
         )
 
         # Post-filter synthesized events
@@ -298,7 +310,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sync InfoMentor events to Google Calendar")
     parser.add_argument("--child", type=str, help="Filter by child name (e.g. förnamn)")
     parser.add_argument("--dry-run", action="store_true", help="Print synthesized events without pushing to Google Calendar")
-    parser.add_argument("--days", type=int, default=45, help="Number of days ahead to sync (default: 45)")
+    parser.add_argument("--days", type=int, default=14, help="Number of days ahead to sync (default: 14)")
     parser.add_argument("--calendar-id", type=str, help="Override Google Calendar ID")
     parser.add_argument("--exclude", type=str, help="Comma-separated patterns to exclude (e.g. 'Studion öppen,Fritids')")
     parser.add_argument("--no-school-hours", action="store_true", help="Do not create daily school hours overview events")
