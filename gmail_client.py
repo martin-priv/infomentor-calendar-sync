@@ -18,6 +18,16 @@ def clean_email_html(raw_html: str) -> str:
     text = soup.get_text(separator=" ")
     return re.sub(r"\s+", " ", text).strip()
 
+def strip_infomentor_email_boilerplate(text: str) -> str:
+    """Removes standard repetitive InfoMentor header/footer boilerplate."""
+    if not text:
+        return ""
+    # Strip: För att svara på detta meddelandet Klicka här. ( Om länken ovan inte fungerar... )
+    text = re.sub(r"För att svara på detta meddelandet\s*Klicka här\.\s*\(.*?\)\s*", "", text, flags=re.DOTALL | re.IGNORECASE)
+    # Strip footer: Stavsborgsskolan skickat via Infomentor
+    text = re.sub(r"Stavsborgsskolan\s+skickat via Infomentor\s*$", "", text, flags=re.IGNORECASE)
+    return text.strip()
+
 def decode_mime_header(header_val: Optional[str]) -> str:
     """Decodes MIME encoded header strings."""
     if not header_val:
@@ -116,14 +126,14 @@ class GmailClient:
                                         decoded = clean_email_html(decoded)
                                     body_text = decoded
 
-                            clean_body = re.sub(r"\s+", " ", body_text).strip()
+                            clean_body = strip_infomentor_email_boilerplate(re.sub(r"\s+", " ", body_text).strip())
                             clean_mid = mid.decode() if isinstance(mid, bytes) else str(mid)
                             emails.append({
                                 "id": f"email_{clean_mid}",
                                 "date": date_str,
                                 "sender": sender,
                                 "subject": subject,
-                                "body": clean_body[:800]
+                                "body": clean_body[:3000]
                             })
 
             mail.logout()

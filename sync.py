@@ -271,6 +271,27 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
             ev["color_id"] = child_color
             all_synthesized_events.append(ev)
 
+    # In-memory deduplication of synthesized events (keep the most detailed event for any overlapping slot)
+    deduped_events = []
+    seen_synth_slots = {}
+    for ev in all_synthesized_events:
+        cname = ev.get("child_first_name", "").lower()
+        s_time = ev.get("start")
+        is_sd = ev.get("event_type") == "SCHOOL_DAY"
+        slot_key = (cname, s_time, is_sd)
+
+        if slot_key not in seen_synth_slots:
+            seen_synth_slots[slot_key] = ev
+            deduped_events.append(ev)
+        else:
+            existing_ev = seen_synth_slots[slot_key]
+            # If current ev has richer description or specific info, replace existing
+            if len(ev.get("description", "")) > len(existing_ev.get("description", "")):
+                idx = deduped_events.index(existing_ev)
+                deduped_events[idx] = ev
+                seen_synth_slots[slot_key] = ev
+    all_synthesized_events = deduped_events
+
     # Step 5: Push to Google Calendar or Print (Dry-run)
     print(f"\n📊 Total synthesized events across children: {len(all_synthesized_events)}")
 
@@ -323,6 +344,57 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
         if purged_count > 0:
             print(f"   🧹 Purged {purged_count} excluded events from Google Calendar.")
         existing = clean_existing
+
+        # Detect and purge duplicate events in calendar
+        from collections import defaultdict
+        import re
+
+        active_synced = [ev for ev in existing if ev.get("status") != "cancelled"]
+        by_slot = defaultdict(list)
+        for ev in active_synced:
+            props = ev.get("extendedProperties", {}).get("private", {})
+            summary = ev.get("summary", "")
+            child = props.get("child_name")
+            if not child and ":" in summary:
+                child = summary.split(":")[0].strip()
+            s = ev.get("start", {}).get("dateTime") or ev.get("start", {}).get("date")
+            im_id = props.get("infomentor_id", "")
+            is_sd = im_id.startswith("schoolday_")
+            by_slot[(child.lower() if child else "", s, is_sd)].append(ev)
+
+        dups_to_delete = []
+        for key, evs in by_slot.items():
+            if len(evs) <= 1:
+                continue
+            child, start, is_sd = key
+            if is_sd:
+                for extra in evs[:-1]:
+                    dups_to_delete.append(extra)
+                continue
+
+            seen = []
+            for ev in evs:
+                s_clean = ev.get("summary", "").lower()
+                core = re.sub(r"^[a-zåäö]+:\s*", "", s_clean)
+                is_dup = False
+                for kept in seen:
+                    kept_core = re.sub(r"^[a-zåäö]+:\s*", "", kept.get("summary", "").lower())
+                    if (core == kept_core or
+                        ("friluftsdag" in core and "friluftsdag" in kept_core) or
+                        (("np" in core or "nationell" in core) and ("np" in kept_core or "nationell" in kept_core))):
+                        is_dup = True
+                        dups_to_delete.append(ev)
+                        break
+                if not is_dup:
+                    seen.append(ev)
+
+        if dups_to_delete:
+            dup_ids = set(d["id"] for d in dups_to_delete)
+            for d in dups_to_delete:
+                gcal.delete_event(d["id"])
+                print(f"   🗑️ Purged duplicate event: {d.get('summary')} (ID: {d.get('id')})")
+            existing = [ev for ev in existing if ev.get("id") not in dup_ids]
+            print(f"   🧹 Purged {len(dups_to_delete)} duplicate events from Google Calendar.")
 
     if dry_run or not gcal:
         print("\n🔍 DRY RUN SUMMARY (Events that would be synced):")

@@ -124,6 +124,41 @@ class GoogleCalendarClient:
                 existing_id = items[0]["id"]
                 existing_event = items[0]
 
+        # Fallback matching: if not found by exact infomentor_id, check existing events
+        # with same child and start time to avoid duplicate overlapping events
+        if not existing_id and existing_events:
+            event_start_val = body["start"].get("dateTime") or body["start"].get("date")
+            is_schoolday_event = str(infomentor_id).startswith("schoolday_")
+
+            for ev in existing_events:
+                if ev.get("status") == "cancelled":
+                    continue
+                ev_props = ev.get("extendedProperties", {}).get("private", {})
+                ev_im_id = str(ev_props.get("infomentor_id", ""))
+                ev_is_schoolday = ev_im_id.startswith("schoolday_")
+
+                # Never match a lesson/exam event with a daily school hours overview event
+                if is_schoolday_event != ev_is_schoolday:
+                    continue
+
+                ev_child = ev_props.get("child_name")
+                if not ev_child and ":" in ev.get("summary", ""):
+                    ev_child = ev.get("summary", "").split(":")[0].strip()
+
+                if ev_child and child_name and ev_child.lower() != child_name.lower():
+                    continue
+
+                ev_start_val = ev.get("start", {}).get("dateTime") or ev.get("start", {}).get("date")
+                if ev_start_val and event_start_val and ev_start_val == event_start_val:
+                    ev_sum = ev.get("summary", "").lower()
+                    new_sum = event_data.get("summary", "").lower()
+                    keywords = ["friluftsdag", "prov", "läxa", "np", "nationell", "skola"]
+                    has_shared_kw = any(kw in ev_sum and kw in new_sum for kw in keywords)
+                    if has_shared_kw or ev_is_schoolday or ev_sum == new_sum:
+                        existing_id = ev["id"]
+                        existing_event = ev
+                        break
+
         # Respect User Deletions (Alternative A)
         if existing_event and existing_event.get("status") == "cancelled":
             return {"action": "skipped_deleted", "id": existing_id, "summary": event_data["summary"]}
@@ -149,20 +184,23 @@ class GoogleCalendarClient:
                 user_modified_desc = True
 
             # Check if user customized the title
-            if last_summary and ex_summary != last_summary:
-                user_modified_summary = True
-            elif not last_summary and ex_summary and ex_summary != event_data["summary"]:
+            if last_summary:
+                if ex_summary != last_summary:
+                    user_modified_summary = True
+            elif "🔒" in ex_summary or "[manuell]" in ex_summary.lower():
                 user_modified_summary = True
 
             # Check if user customized the time
             ex_s = existing_event.get("start", {}).get("dateTime") or existing_event.get("start", {}).get("date")
             ex_e = existing_event.get("end", {}).get("dateTime") or existing_event.get("end", {}).get("date")
-            if last_start and (ex_s != last_start or ex_e != last_end):
-                user_modified_time = True
+            if last_start:
+                if ex_s != last_start or ex_e != last_end:
+                    user_modified_time = True
 
             # Check if user customized description
-            if last_desc and ex_desc != last_desc:
-                user_modified_desc = True
+            if last_desc is not None:
+                if ex_desc != last_desc:
+                    user_modified_desc = True
 
             # Preserve user modifications
             if user_modified_summary:

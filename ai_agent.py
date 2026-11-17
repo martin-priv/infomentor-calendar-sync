@@ -162,7 +162,7 @@ class InfomentorAIAgent:
                 "subject": m.get("messageSubject") or m.get("subject"),
                 "date": m.get("timeSent") or m.get("date"),
                 "sender": m.get("sentUser", {}).get("displayName") if isinstance(m.get("sentUser"), dict) else "",
-                "body": clean_html(m.get("body") or m.get("messageBody", ""))[:350]
+                "body": clean_html(m.get("body") or m.get("messageBody", ""))[:1200]
             })
 
         clean_emails = []
@@ -173,7 +173,7 @@ class InfomentorAIAgent:
                     "date": em.get("date"),
                     "sender": em.get("sender"),
                     "subject": em.get("subject"),
-                    "body": (em.get("body") or "")[:450]
+                    "body": (em.get("body") or "")[:2500]
                 })
 
         # Extract first name cleanly (handles "Efternamn, Förnamn" as well as "Förnamn Efternamn")
@@ -273,17 +273,40 @@ REGLER OCH RIKTLINJER:
 5. EXKLUDERA RUTIN- OCH DROP-IN-AKTIVITETER:
    - Ta INTE med vanliga schemalagda drop-in-studiestugor eller läxhjälp (t.ex. "Studion öppen") eller allmän fritidspassning om det inte rör sig om en specifik prov/inlämningsdeadline eller avvikelse.
 
-6. ID OCH SPÅRBARHET:
-   - Ange ett unikt `infomentor_id` för varje händelse så att vi kan uppdatera den utan dubbletter:
-     T.ex. "cal_<id>" om baserad på kalenderpost, "msg_<id>" om baserad på meddelande, eller "uol_<id>".
+6. DETERMINISTISKA ID:N (MYCKET VIKTIGT):
+   Varje händelse MÅSTE ha ett strikt och stabilt format på `infomentor_id` så att framtida synkningar uppdaterar samma event och inte skapar dubbletter:
+   - Kalenderhändelse: "cal_<id>" (t.ex. "cal_220723740")
+   - Planering / UOL: "uol_<id>_YYYY-MM-DD"
+   - Schemapass (t.ex. Schemabrytande aktiviteter som NP eller Friluftsdag):
+     "sched_{first_name.lower()}_YYYY-MM-DD_<ämne/typ>"
+     Exempel:
+     "sched_{first_name.lower()}_2026-11-17_friluftsdag"
+     "sched_{first_name.lower()}_2026-11-18_np"
+     "sched_{first_name.lower()}_2026-11-19_np"
+   - Fristående lärarmeddelande: "msg_<id>_YYYY-MM-DD"
+   - Fristående e-post: "email_<id>_YYYY-MM-DD"
 
-7. E-POST OCH VECKOBREV (PUNKT 5):
-   - Granska e-postmeddelandena från skolan noga. De innehåller ofta avgörande information om schemabrytande dagar, provgrupper (t.ex. vem som gör muntliga NP vilken tid), information om nationella prov i svenska/engelska, och gymnasiemässa.
-   - Använd e-posten för att:
-     a) Förstå vad generella schemapass som "Schemabrytande: NP" faktiskt handlar om (t.ex. om ett mail anger att åk 9 genomför muntliga NP i svenska vecka 47 och samlas kl 08:15 i matsalen).
-     b) Skapa eller korrigera provhändelser med rätt ämne, tider och grupper för eleven {first_name}.
+7. INGEN DUBBELBOKNING ELLER DUBBLETTER:
+   - Skapa ALDRIG mer än EN händelse för samma schemapass eller samma tidsintervall för samma barn!
+   - Om ett schemapass heter "Schemabrytande: NP" (t.ex. kl 08:15–09:15) och det finns e-post eller meddelande om samma prov:
+     SKAPA BARA ETT SAMMANHÅLLET EVENT för den tiden! Skapa INTE både ett schemapass OCH ett separat mailevent för samma prov.
+     Slå ihop schemapasset med informationen från mailet.
 
-8. FORMAT:
+8. E-POST OCH VECKOBREV — SÄRSKILJ ÄMNEN OCH LÄRARE (MYCKET VIKTIGT):
+   - Granska e-postmeddelandena från skolan noga. De ger avgörande kontext till vad schemabrytande pass handlar om.
+   - BLANDA ALDRIG IHOP OLIKA PROV, ÄMNEN ELLER LÄRARE:
+     * Om ett meddelande (t.ex. från Patricia Wetterblad) gäller NP i ENGELSKA i "lilla konferensen" (som genomfördes måndag 16/11):
+       Applicera ALDRIG den informationen på NP i SVENSKA!
+     * För NP i SVENSKA vecka 47 (från Ellen Winroths e-postutskick "Viktig information kring vecka 47"):
+       - Titel: "{first_name}: Nationellt prov (NP) i Svenska"
+       - Samling och start: Kl. 08.15 i Matsalen!
+       - Lokal: "Matsalen"
+       - Beskrivning ska tydligt innehålla:
+         📌 Vad: Muntlig del av nationellt prov i svenska
+         ℹ️ Info från lärare: Den dag man ska genomföra sitt prov i svenska börjar man i matsalen kl. 08.15. Det är viktigt att komma i god tid innan förberedelsetiden i matsalen startar. Ni kommer att få lämna in era mobiler och smartklockor. I matsalen ges information om förberedelsen som sedan ska vara ett underlag för diskussionerna i respektive grupp. MYCKET VIKTIGT: Gruppernas redovisningstider kommer att sättas upp runt om i skolan. Ni måste ha koll på när just er grupp ska genomföra provet.
+         🔗 Källa: InfoMentor Veckobrev (Ellen Winroth) & Schema
+
+9. FORMAT:
    Svara ENDAST med ett giltigt JSON-objekt med strukturen:
    {{
      "events": [
@@ -307,6 +330,18 @@ REGLER OCH RIKTLINJER:
             events = parsed.get("events", [])
             for e in events:
                 e["child_name"] = first_name
+                # Canonicalize infomentor_id to ensure determinism across sync runs
+                im_id = str(e.get("infomentor_id", "")).strip()
+                s_date = (e.get("start") or "")[:10]
+                summary_lower = e.get("summary", "").lower()
+                if "friluftsdag" in summary_lower:
+                    im_id = f"sched_{first_name.lower()}_{s_date}_friluftsdag"
+                elif "nationell" in summary_lower or "np" in summary_lower:
+                    im_id = f"sched_{first_name.lower()}_{s_date}_np"
+                elif not im_id:
+                    slug = re.sub(r"[^a-z0-9]", "", summary_lower)[:15]
+                    im_id = f"ev_{first_name.lower()}_{s_date}_{slug}"
+                e["infomentor_id"] = im_id
             return events
         except Exception as ex:
             print(f"Failed to parse {self.provider.upper()} JSON output: {ex}")
