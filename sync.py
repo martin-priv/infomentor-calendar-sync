@@ -197,15 +197,8 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
             })
         print(f"      Found schedule across {len(clean_sched_by_day)} school days.")
 
-        # Filter schedule for AI to focus on days with events + upcoming 7 days
-        event_days = set()
-        for c in cal_entries:
-            d = c.get("startDate") or (c.get("startDateFull", "")[:10] if c.get("startDateFull") else "")
-            if d:
-                event_days.add(d)
-        for i in range(7):
-            event_days.add((datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d"))
-        sched_for_ai = {d: clean_sched_by_day[d] for d in clean_sched_by_day if d in event_days}
+        # Pass full schedule across the sync window to AI (at most 10 school days, ensures full timetable context)
+        sched_for_ai = clean_sched_by_day
 
         # AI Synthesis (with timetable slotting & message precedence)
         print(f"   🧠 Synthesizing with Gemini AI Agent ({len(sched_for_ai)} schedule days in prompt)...")
@@ -279,15 +272,36 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
         existing = gcal.get_existing_events(time_min, time_max)
         print(f"   Found {len(existing)} existing events currently in calendar window.")
 
-        # Purge excluded events
+        # Purge excluded events and obsolete multi-day all-day test events
         clean_existing = []
         purged_count = 0
         for ev in existing:
             summary = ev.get("summary", "")
             props = ev.get("extendedProperties", {}).get("private", {})
-            if (props.get("source") == "infomentor_sync" or props.get("infomentor_id")) and is_excluded(summary):
+            im_id = props.get("infomentor_id", "")
+            is_synced = props.get("source") == "infomentor_sync" or bool(im_id)
+
+            # Check if this is an obsolete multi-day test banner (e.g. uol_... spanning multiple days)
+            is_obsolete_all_day_test = False
+            start = ev.get("start", {})
+            end = ev.get("end", {})
+            if is_synced and "date" in start:
+                s_d = start.get("date", "")
+                e_d = end.get("date", "")
+                if im_id in ("uol_8592172_prov_v49", "uol_8592172_v49"):
+                    is_obsolete_all_day_test = True
+                elif ("prov" in summary.lower() or "läxa" in summary.lower() or "uol_" in im_id):
+                    try:
+                        s_dt = datetime.strptime(s_d, "%Y-%m-%d")
+                        e_dt = datetime.strptime(e_d, "%Y-%m-%d")
+                        if (e_dt - s_dt).days > 1:
+                            is_obsolete_all_day_test = True
+                    except Exception:
+                        pass
+
+            if is_synced and (is_excluded(summary) or is_obsolete_all_day_test):
                 gcal.delete_event(ev["id"])
-                print(f"   🗑️ Purged excluded event: {summary}")
+                print(f"   🗑️ Purged obsolete/excluded event: {summary} ({im_id})")
                 purged_count += 1
             else:
                 clean_existing.append(ev)

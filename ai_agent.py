@@ -136,13 +136,19 @@ class InfomentorAIAgent:
         clean_uol = []
         for u in uols:
             overview_text = ""
+            timeline_text = ""
             if "sections" in u:
                 for s in u.get("sections", []):
                     for ov in s.get("overview", []):
                         overview_text += f"{ov.get('label')}: {ov.get('value')} | "
-            details = (overview_text or clean_html(u.get("description", "")))[:400]
+                    if s.get("type") == "timeline":
+                        for e in s.get("entries", [])[:3]:
+                            txt = clean_html(e.get("text", ""))
+                            if txt:
+                                timeline_text += f"{txt} | "
+            details = (timeline_text or overview_text or clean_html(u.get("description", "")))[:600]
             clean_uol.append({
-                "id": u.get("id"),
+                "id": str(u.get("id")),
                 "title": u.get("title"),
                 "details": details
             })
@@ -201,16 +207,48 @@ REGLER OCH RIKTLINJER:
      🔗 Källa: InfoMentor [Planering eller Kalender]
 
 3. TIDSSÄTTNING OCH LEKTIONSSLOTTING (MYCKET VIKTIGT):
-   För prov, förhör, inlämningar och ämneshändelser:
-   a) LÄRARMEDDELANDEN HAR HÖGSTA PRIORITET FÖR TID OCH SAL:
+   För prov, förhör, läxor, inlämningar och ämneshändelser ska tider alltid sättas smart:
+   a) LÄRARMEDDELANDEN MED SPECIFIK TID:
       Om ett lärarmeddelande anger en specifik tid eller lokal (t.ex. "NP i Ma hålls kl 08:30-10:00 i Aulan" eller "Provet startar kl 13:00 i sal No 1"):
       Använd ALLTID tiden och salen från meddelandet! Sätt `is_all_day: false`, `start` och `end` som ISO 8601 "YYYY-MM-DDTHH:MM:SS+01:00", och `location` till den angivna lokalen.
-   b) OM INGET MEDDELANDE ANGER SPECIFIK TID:
-      Leta upp ämnet i dagens lektionsschema under punkt 4 (t.ex. "Prov i Matematik" -> Matematik/MA, "Biologiprov" -> Naturorientering/NO, "Glosläxa" -> Engelska/EN, "Slutprov Slöjd" -> Slöjd/SL, "Prov Historia" -> Samhällsorientering/SO, "Idrottsprov" -> Idrott och hälsa/IDH).
-      Sätt `start` och `end` till exakt lektionens start- och sluttid i ISO 8601 ("YYYY-MM-DDTHH:MM:SS+01:00"), och sätt `is_all_day: false`!
-      Om lektionen anger en specifik sal (t.ex. "Sal: Blå 3"), sätt `location` till den salen!
-   c) OM ÄMNET INTE FINNS I DAGENS SCHEMA eller om händelsen är en allmän dag (t.ex. studiedag, "Älta skolas dag", "Julavslutning", eller en deadline utan specifik lektion):
-      Sätt `is_all_day: true`, och `start` samt `end` till formatet "YYYY-MM-DD".
+   b) KALENDERPOSTER MED BEFINTLIG TID FRÅN LÄRARE:
+      Om en kalenderpost i InfoMentor redan har `start_time` och `end_time` (t.ex. start_time: "10:00", end_time: "12:00" som för glosläxa):
+      BEHÅLL OCH ANVÄND ALLTID DEN TIDEN! Sätt `is_all_day: false`, `start` och `end` i ISO 8601 ("YYYY-MM-DDTHH:MM:SS+01:00").
+      Gör ALDRIG om en sådan händelse till heldag (`is_all_day: true`) bara för att ämnesnamnet inte står på schemat den dagen!
+   c) HÄNDELSER PÅ EN SPECIFIK DAG UTAN KLOCKSLAG (Hitta lektion i schemat):
+      Om händelsen gäller en viss dag men saknar klockslag (start_time är tom eller 00:00):
+      Leta upp ämnet i dagens lektionsschema under punkt 4:
+      - Engelska / Glosläxa -> Engelska (EN)
+      - Matematik -> Matematik (MA)
+      - Fysik, Kemi, Biologi -> Naturorientering (NO)
+      - Tyska -> Tyska (SPV TY)
+      - Spanska -> Spanska (SPV SP)
+      - Franska -> Franska (SPV FR)
+      - Svenska / Läsläxa -> Svenska (SV)
+      - Slöjd -> Slöjd (SL)
+      - Historia, Geografi, Samhällskunskap, Religion -> Samhällsorientering (SO)
+      - Teknik -> Teknik (TK)
+      - Idrott och hälsa -> Idrott och hälsa (IDH)
+      Om ämnet finns i dagens schema:
+      Sätt `start` och `end` till exakt lektionens start- och sluttid i ISO 8601 ("YYYY-MM-DDTHH:MM:SS+01:00"), sätt `is_all_day: false` och `location` till salen!
+      Om ämnet INTE finns i dagens schema:
+      - Kontrollera om läraren som håller i ämnet har en annan lektion med eleven den dagen (t.ex. läraren har Svenska kl 13:10). Slot då in händelsen under det passet.
+      - Om inte, kolla vilken dag i samma vecka eleven har lektion i ämnet och slotta in händelsen under det lektionspasset.
+      - Prov och läxor ska ALDRIG ligga som heldagshändelse utan tid om det finns schemalagda lektioner i ämnet!
+   d) VECKO-BASERADE PROV OCH LÄXOR (t.ex. "Prov i Tyska v. 49", "Provvecka", "Läxa v. 46"):
+      SKAPA ALDRIG EN FLERDAGARS HELDAGSHÄNDELSE SOM STRÄCKER SIG ÖVER HELA VECKAN!
+      Leta upp alla lektioner för ämnet under den angivna veckan i schemat (punkt 4):
+      - Om informationen anger att provet sker under flera/båda veckans lektionsdagar (t.ex. "sker under båda lektionsdagarna" eller delprov):
+        Skapa ett separat event för varje lektionstillfälle under veckan med `is_all_day: false`, och sätt tiden exakt till lektionens start- och sluttid:
+        Exempel:
+        - Tisdag: "{first_name}: Prov i Tyska (Del 1)" (start: "YYYY-MM-DDT08:00:00+01:00", end: "YYYY-MM-DDT08:40:00+01:00", infomentor_id: "uol_<id>_YYYY-MM-DD")
+        - Torsdag: "{first_name}: Prov i Tyska (Del 2)" (start: "YYYY-MM-DDT08:00:00+01:00", end: "YYYY-MM-DDT08:40:00+01:00", infomentor_id: "uol_<id>_YYYY-MM-DD")
+      - Om det är ett enskilt prov eller läxa för veckan:
+        Placera det på ämnets första ordinarie lektionspass under veckan med `is_all_day: false`.
+   e) VILKA HÄNDELSER FÅR VARA HELDAGAR (`is_all_day: true`)?
+      Endast genuina temadagar eller gemensamma heldagar utan lektionskoppling:
+      T.ex. "Älta skolas dag", "Studiedag", "Skolavslutning", "Nobellunch", "Lovdag", "Friluftsdag" (om ingen samlingstid angetts).
+      Sätt då `is_all_day: true`, och `start` samt `end` till formatet "YYYY-MM-DD".
 
 4. SCHEMAÄNDRINGAR OCH INSTÄLLDA LEKTIONER:
    - Granska lärarens meddelanden. Om ett meddelande nämner att en lektion är inställd, att skoldagen börjar senare (t.ex. kl 09:00 i stället för 08:15) eller slutar tidigare:
