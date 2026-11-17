@@ -28,10 +28,11 @@ class InfomentorAIAgent:
         calendar_entries: List[Dict[str, Any]],
         uols: List[Dict[str, Any]],
         messages: List[Dict[str, Any]],
-        existing_calendar_events: Optional[List[Dict[str, Any]]] = None
+        existing_calendar_events: Optional[List[Dict[str, Any]]] = None,
+        schedule_by_day: Optional[Dict[str, List[str]]] = None
     ) -> List[Dict[str, Any]]:
         """
-        Synthesizes raw calendar events, UOL study plans, and teacher messages
+        Synthesizes raw calendar events, UOL study plans, teacher messages, and daily timetables
         into a coherent, high-value list of Google Calendar events.
         """
         # Prepare concise representation of input data
@@ -74,8 +75,14 @@ class InfomentorAIAgent:
                 "body": clean_html(m.get("body") or m.get("messageBody", ""))[:350]
             })
 
+        # Extract first name cleanly (handles "Efternamn, Förnamn" as well as "Förnamn Efternamn")
+        if "," in child_name:
+            first_name = child_name.split(",")[1].strip()
+        else:
+            first_name = child_name.split()[0].strip()
+
         prompt = f"""
-Du är en intelligent assistent som hjälper en familj att hålla ordning på skolaktiviteter i Google Calendar för eleven: {child_name}.
+Du är en intelligent assistent som hjälper en familj att hålla ordning på skolaktiviteter i Google Calendar för eleven: {first_name}.
 
 INDATA FRÅN INFOMENTOR:
 1. KALENDERHÄNDELSER (prov, läxor, deadlines, aktiviteter):
@@ -84,20 +91,23 @@ INDATA FRÅN INFOMENTOR:
 2. PLANERINGAR / UOL (studieplaner, provområden, kapitel och vad eleven ska plugga på):
 {json.dumps(clean_uol, ensure_ascii=False, indent=2)}
 
-3. MEDDELANDEN FRÅN LÄRARE (senaste meddelanden, information om inställda lektioner, sena starter, packlistor):
+3. MEDDELANDEN FRÅN LÄRARE (senaste meddelanden, information om inställda lektioner, sena starter, packlistor, avvikande tider/lokaler för prov):
 {json.dumps(clean_msgs, ensure_ascii=False, indent=2)}
+
+4. SCHEMA OCH LEKTIONSÖVERSIKT PER DAG:
+{json.dumps(schedule_by_day or {}, ensure_ascii=False, indent=2)}
 
 UPPGIFT:
 Skapa en sammanhållen, berikad lista av kalenderhändelser att synka till Google Calendar.
 
 REGLER OCH RIKTLINJER:
 1. TITELFORMAT:
-   Varje händelse ska inledas med barnets förnamn: "{child_name.split()[0]}: [Kort beskrivning]"
+   Varje händelse ska inledas med barnets förnamn: "{first_name}: [Kort beskrivning]"
    Exempel:
-   - "{child_name.split()[0]}: Prov i Matematik (Kapitel 2 Tal)"
-   - "{child_name.split()[0]}: Engelska - Glosor & textläxa"
-   - "{child_name.split()[0]}: Friluftsdag vid Hellasgården"
-   - "{child_name.split()[0]}: ⚠️ Inställd lektion: Franska (börjar 09:15)"
+   - "{first_name}: Prov i Matematik (Kapitel 2 Tal)"
+   - "{first_name}: Engelska - Glosor & textläxa"
+   - "{first_name}: Friluftsdag vid Hellasgården"
+   - "{first_name}: ⚠️ Inställd lektion: Franska (börjar 09:15)"
 
 2. SAMMANSLAGNING OCH BERIKNING:
    - Om en kalenderhändelse är ett prov eller en inlämning, leta upp relevant Planering (UOL) eller meddelande som beskriver vad provet handlar om (t.ex. kapitel, sidor, begrepp, länk till classroom).
@@ -107,24 +117,31 @@ REGLER OCH RIKTLINJER:
      ℹ️ Info från lärare: [Eventuella tips eller detaljer]
      🔗 Källa: InfoMentor [Planering eller Kalender]
 
-3. SCHEMAÄNDRINGAR OCH INSTÄLLDA LEKTIONER:
+3. TIDSSÄTTNING OCH LEKTIONSSLOTTING (MYCKET VIKTIGT):
+   För prov, förhör, inlämningar och ämneshändelser:
+   a) LÄRARMEDDELANDEN HAR HÖGSTA PRIORITET FÖR TID OCH SAL:
+      Om ett lärarmeddelande anger en specifik tid eller lokal (t.ex. "NP i Ma hålls kl 08:30-10:00 i Aulan" eller "Provet startar kl 13:00 i sal No 1"):
+      Använd ALLTID tiden och salen från meddelandet! Sätt `is_all_day: false`, `start` och `end` som ISO 8601 "YYYY-MM-DDTHH:MM:SS+01:00", och `location` till den angivna lokalen.
+   b) OM INGET MEDDELANDE ANGER SPECIFIK TID:
+      Leta upp ämnet i dagens lektionsschema under punkt 4 (t.ex. "Prov i Matematik" -> Matematik/MA, "Biologiprov" -> Naturorientering/NO, "Glosläxa" -> Engelska/EN, "Slutprov Slöjd" -> Slöjd/SL, "Prov Historia" -> Samhällsorientering/SO, "Idrottsprov" -> Idrott och hälsa/IDH).
+      Sätt `start` och `end` till exakt lektionens start- och sluttid i ISO 8601 ("YYYY-MM-DDTHH:MM:SS+01:00"), och sätt `is_all_day: false`!
+      Om lektionen anger en specifik sal (t.ex. "Sal: Blå 3"), sätt `location` till den salen!
+   c) OM ÄMNET INTE FINNS I DAGENS SCHEMA eller om händelsen är en allmän dag (t.ex. studiedag, "Älta skolas dag", "Julavslutning", eller en deadline utan specifik lektion):
+      Sätt `is_all_day: true`, och `start` samt `end` till formatet "YYYY-MM-DD".
+
+4. SCHEMAÄNDRINGAR OCH INSTÄLLDA LEKTIONER:
    - Granska lärarens meddelanden. Om ett meddelande nämner att en lektion är inställd, att skoldagen börjar senare (t.ex. kl 09:00 i stället för 08:15) eller slutar tidigare:
      Skapa en kalenderhändelse för den berörda dagen/tiden med varningsemblemet ⚠️ så föräldern ser det direkt!
+     Sätt `event_type: "SCHEDULE_CHANGE"`.
 
-4. EXKLUDERA RUTIN- OCH DROP-IN-AKTIVITETER:
+5. EXKLUDERA RUTIN- OCH DROP-IN-AKTIVITETER:
    - Ta INTE med vanliga schemalagda drop-in-studiestugor eller läxhjälp (t.ex. "Studion öppen") eller allmän fritidspassning om det inte rör sig om en specifik prov/inlämningsdeadline eller avvikelse.
 
-5. ID OCH SPÅRBARHET:
+6. ID OCH SPÅRBARHET:
    - Ange ett unikt `infomentor_id` för varje händelse så att vi kan uppdatera den utan dubbletter:
      T.ex. "cal_<id>" om baserad på kalenderpost, "msg_<id>" om baserad på meddelande, eller "uol_<id>".
 
-5. DATUM OCH TIDER:
-   - Om det är en heldagshändelse (t.ex. ett prov där bara datum anges, eller studiedag):
-     Sätt `is_all_day: true`, och `start` samt `end` till formatet "YYYY-MM-DD".
-   - Om klockslag finns (t.ex. start_time "09:00", end_time "10:00"):
-     Sätt `is_all_day: false`, och `start` samt `end` till ISO 8601 sträng "YYYY-MM-DDTHH:MM:SS+01:00".
-
-6. FORMAT:
+7. FORMAT:
    Svara ENDAST med ett giltigt JSON-objekt med strukturen:
    {{
      "events": [
@@ -176,7 +193,7 @@ REGLER OCH RIKTLINJER:
             parsed = json.loads(text_content)
             events = parsed.get("events", [])
             for e in events:
-                e["child_name"] = child_name.split()[0]
+                e["child_name"] = first_name
             return events
         except Exception as ex:
             print(f"Failed to parse Gemini JSON output: {ex}")

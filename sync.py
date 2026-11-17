@@ -14,7 +14,29 @@ from infomentor_client import InfomentorClient
 from ai_agent import InfomentorAIAgent
 from google_calendar_client import GoogleCalendarClient
 
-def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 45, custom_calendar_id: str = None, custom_exclude: str = None):
+SUBJECT_MAP = {
+    "BL": "Bild",
+    "EN": "Engelska",
+    "HKK": "Hem- och konsumentkunskap",
+    "IDH": "Idrott och hälsa",
+    "MA": "Matematik",
+    "ME": "Mentorstid",
+    "MU": "Musik",
+    "NO": "Naturorientering (Biologi/Fysik/Kemi)",
+    "SKV: Läs": "Läsning",
+    "SL": "Slöjd",
+    "SO": "Samhällsorientering (Historia/Geografi/Samhällskunskap)",
+    "SPV SP": "Spanska",
+    "SPV TY": "Tyska",
+    "SV": "Svenska",
+    "TK": "Teknik",
+    "Schemabrytande: Friluftsdag": "Friluftsdag",
+    "Schemabrytande: NP": "Nationella prov (NP)",
+    "Studiestöd": "Studiestöd",
+}
+NON_LESSONS = {"RAST", "LUNCH", "Förflyttning", "Ombyte"}
+
+def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 45, custom_calendar_id: str = None, custom_exclude: str = None, sync_school_hours: bool = True):
     # Load configuration
     env_path = os.path.join(os.path.dirname(__file__), ".env")
     load_dotenv(env_path)
@@ -35,6 +57,9 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
     exclude_raw = custom_exclude or os.environ.get("EXCLUDE_PATTERNS", "Studion öppen")
     exclude_patterns = [p.strip().lower() for p in exclude_raw.split(",") if p.strip()]
 
+    env_school_hours = os.environ.get("SYNC_SCHOOL_HOURS", "true").lower() in ("true", "1", "yes")
+    do_school_hours = sync_school_hours and env_school_hours
+
     def is_excluded(text: str) -> bool:
         if not text:
             return False
@@ -45,6 +70,8 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
     print(f"🔑 Using InfoMentor account: {im_user}")
     if exclude_patterns:
         print(f"🚫 Active exclusion filter: {', '.join(exclude_patterns)}")
+    if do_school_hours:
+        print("🏫 Daily school hours overview enabled")
 
     # Step 1: Connect to InfoMentor
     client = InfomentorClient()
@@ -123,21 +150,89 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
                 m.update(detail)
         print(f"      Fetched {len(raw_msgs)} recent messages with bodies.")
 
-        # AI Synthesis
-        print("   🧠 Synthesizing with Gemini AI Agent...")
+        # Fetch timetable schedule
+        print("   📥 Fetching timetable schedule...")
+        raw_schedule = client.get_schedule(start_date, end_date)
+        clean_sched_by_day = {}
+        lessons_by_day = {}
+        for item in raw_schedule:
+            title = item.get("title", "")
+            if title in NON_LESSONS or is_excluded(title):
+                continue
+            day = item["start"][:10]
+            s_time = item["startTime"]
+            e_time = item["endTime"]
+            room = item.get("notes", {}).get("roomInfo", "").strip()
+            tutor = item.get("notes", {}).get("tutors", "").strip()
+            subj = SUBJECT_MAP.get(title, title)
+            desc = f"{s_time}-{e_time} {subj}"
+            if room:
+                desc += f" (Sal: {room})"
+            if tutor:
+                desc += f" (Lärare: {tutor})"
+            clean_sched_by_day.setdefault(day, []).append(desc)
+            lessons_by_day.setdefault(day, []).append({
+                "title": title,
+                "subject": subj,
+                "startTime": s_time,
+                "endTime": e_time,
+                "room": room,
+                "tutor": tutor
+            })
+        print(f"      Found schedule across {len(clean_sched_by_day)} school days.")
+
+        # AI Synthesis (with timetable slotting & message precedence)
+        print("   🧠 Synthesizing with Gemini AI Agent (with timetable slotting)...")
         synthesized = ai_agent.synthesize_events(
             child_name=f"{first_name} {parts[0]}" if len(parts) > 1 else first_name,
             calendar_entries=cal_entries,
             uols=uols,
-            messages=raw_msgs
+            messages=raw_msgs,
+            schedule_by_day=clean_sched_by_day
         )
 
         # Post-filter synthesized events
         synthesized = [ev for ev in synthesized if not is_excluded(ev.get("summary", ""))]
-
         print(f"   ✨ Generated {len(synthesized)} synthesized events for {first_name}.")
+
+        # School day overview events (Skolstart & Sluttid med dagens schema)
+        school_day_events = []
+        if do_school_hours:
+            pupil_id = pupil.get("id", first_name.lower())
+            for day, day_lessons in sorted(lessons_by_day.items()):
+                # Exclude optional drop-in studiestöd from school day start/end bounds
+                core_lessons = [l for l in day_lessons if l["title"] != "Studiestöd"] or day_lessons
+                if not core_lessons:
+                    continue
+                first_start = min(l["startTime"] for l in core_lessons)
+                last_end = max(l["endTime"] for l in core_lessons)
+
+                desc_lines = ["📚 Dagens schema:"]
+                for l in core_lessons:
+                    extra = []
+                    if l["room"]: extra.append(f"Sal: {l['room']}")
+                    if l["tutor"]: extra.append(f"Lärare: {l['tutor']}")
+                    extra_str = f" ({', '.join(extra)})" if extra else ""
+                    desc_lines.append(f"• {l['startTime']}–{l['endTime']}: {l['subject']}{extra_str}")
+
+                school_day_events.append({
+                    "infomentor_id": f"schoolday_{pupil_id}_{day}",
+                    "summary": f"{first_name}: Skola {first_start}–{last_end}",
+                    "description": "\n".join(desc_lines),
+                    "start": f"{day}T{first_start}:00+01:00",
+                    "end": f"{day}T{last_end}:00+01:00",
+                    "is_all_day": False,
+                    "location": "",
+                    "event_type": "SCHOOL_DAY",
+                    "child_name": first_name,
+                    "child_first_name": first_name
+                })
+            print(f"   🏫 Generated {len(school_day_events)} daily school schedule events for {first_name}.")
+
         for ev in synthesized:
             ev["child_first_name"] = first_name
+            all_synthesized_events.append(ev)
+        for ev in school_day_events:
             all_synthesized_events.append(ev)
 
     # Step 5: Push to Google Calendar or Print (Dry-run)
@@ -206,6 +301,7 @@ if __name__ == "__main__":
     parser.add_argument("--days", type=int, default=45, help="Number of days ahead to sync (default: 45)")
     parser.add_argument("--calendar-id", type=str, help="Override Google Calendar ID")
     parser.add_argument("--exclude", type=str, help="Comma-separated patterns to exclude (e.g. 'Studion öppen,Fritids')")
+    parser.add_argument("--no-school-hours", action="store_true", help="Do not create daily school hours overview events")
     args = parser.parse_args()
 
     run_sync(
@@ -213,5 +309,6 @@ if __name__ == "__main__":
         dry_run=args.dry_run,
         days_ahead=args.days,
         custom_calendar_id=args.calendar_id,
-        custom_exclude=args.exclude
+        custom_exclude=args.exclude,
+        sync_school_hours=not args.no_school_hours
     )

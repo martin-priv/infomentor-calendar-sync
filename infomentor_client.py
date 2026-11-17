@@ -99,11 +99,12 @@ class InfomentorClient:
         return []
 
     def get_schedule(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
-        """Fetches timetable lessons"""
-        url = f"{self.hub_url}/timetable/timetable/appData"
-        resp = self.session.post(url, json={"startDate": start_date, "endDate": end_date})
+        """Fetches timetable lessons from gettimetablelist"""
+        url = f"{self.hub_url}/timetable/timetable/gettimetablelist"
+        resp = self.session.post(url, json={"start": start_date, "end": end_date, "UTCOffset": -60})
         if resp.status_code == 200:
-            return resp.json().get("items", [])
+            data = resp.json()
+            return data if isinstance(data, list) else []
         return []
 
     def get_uols(self) -> List[Dict[str, Any]]:
