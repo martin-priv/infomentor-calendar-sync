@@ -22,7 +22,7 @@ Headless Python-tjänst som pollar **InfoMentor** för barnens aktiviteter, sche
 
 3. **Pastellfärg per barn & Skolöversikt:**
    - Varje barn tilldelas automatiskt en egen tydlig färg i Google Calendar (mjuk palett med bra kontrast mot vit text, t.ex. Blåbär, Basilika, Flamingo). Kan även konfigureras manuellt via `CHILD_COLORS`.
-   - Genererar en diskret, sammanfattande 15-minuters rad vid skolstarten (t.ex. `Isak: Skola 08:00–14:05`) med hela dagens schema i beskrivningen (ämnen, tider, salar, lärare), vilket håller kalendern ren och luftig.
+   - Genererar en diskret, sammanfattande 15-minuters rad vid skolstarten (t.ex. `Elev: Skola 08:00–14:05`) med hela dagens schema i beskrivningen (ämnen, tider, salar, lärare), vilket håller kalendern ren och luftig.
 
 4. **Respektera manuella ändringar (Alternative A):**
    - Om du manuellt flyttar en tid, byter titel eller redigerar beskrivningen i Google Calendar känner skriptet av det och **skriver inte över dina ändringar**.
@@ -79,7 +79,7 @@ EXCLUDE_PATTERNS=Studion öppen
 SYNC_SCHOOL_HOURS=true
 
 # Färger per barn (Valfritt - tilldelas annars mjuk pastellpalett automatiskt)
-# CHILD_COLORS=Adam:9,Isak:10,Leo:4
+# CHILD_COLORS=Barn1:9,Barn2:10,Barn3:4
 
 # Gmail-integration (VALFRITT - läser e-post/veckobrev från skolan)
 # Lämna utkommenterat om du inte vill koppla Gmail.

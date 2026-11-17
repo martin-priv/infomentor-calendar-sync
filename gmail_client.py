@@ -24,8 +24,8 @@ def strip_infomentor_email_boilerplate(text: str) -> str:
         return ""
     # Strip: För att svara på detta meddelandet Klicka här. ( Om länken ovan inte fungerar... )
     text = re.sub(r"För att svara på detta meddelandet\s*Klicka här\.\s*\(.*?\)\s*", "", text, flags=re.DOTALL | re.IGNORECASE)
-    # Strip footer: Stavsborgsskolan skickat via Infomentor
-    text = re.sub(r"Stavsborgsskolan\s+skickat via Infomentor\s*$", "", text, flags=re.IGNORECASE)
+    # Strip footer: ... skickat via Infomentor
+    text = re.sub(r".*?\s+skickat via Infomentor\s*$", "", text, flags=re.IGNORECASE)
     return text.strip()
 
 def decode_mime_header(header_val: Optional[str]) -> str:

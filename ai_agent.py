@@ -262,7 +262,7 @@ REGLER OCH RIKTLINJER:
         Placera det på ämnets första ordinarie lektionspass under veckan med `is_all_day: false`.
    e) VILKA HÄNDELSER FÅR VARA HELDAGAR (`is_all_day: true`)?
       Endast genuina temadagar eller gemensamma heldagar utan lektionskoppling:
-      T.ex. "Älta skolas dag", "Studiedag", "Skolavslutning", "Nobellunch", "Lovdag", "Friluftsdag" (om ingen samlingstid angetts).
+      T.ex. "Temadag / Öppet hus", "Studiedag", "Skolavslutning", "Nobellunch", "Lovdag", "Friluftsdag" (om ingen samlingstid angetts).
       Sätt då `is_all_day: true`, och `start` samt `end` till formatet "YYYY-MM-DD".
 
 4. SCHEMAÄNDRINGAR OCH INSTÄLLDA LEKTIONER:
@@ -293,18 +293,14 @@ REGLER OCH RIKTLINJER:
      Slå ihop schemapasset med informationen från mailet.
 
 8. E-POST OCH VECKOBREV — SÄRSKILJ ÄMNEN OCH LÄRARE (MYCKET VIKTIGT):
-   - Granska e-postmeddelandena från skolan noga. De ger avgörande kontext till vad schemabrytande pass handlar om.
+   - Granska e-postmeddelandena från skolan noga. De ger avgörande kontext till vad schemabrytande pass handlar om (provgrupper, gymnasiemässa, friluftsdagar).
    - BLANDA ALDRIG IHOP OLIKA PROV, ÄMNEN ELLER LÄRARE:
-     * Om ett meddelande (t.ex. från Patricia Wetterblad) gäller NP i ENGELSKA i "lilla konferensen" (som genomfördes måndag 16/11):
-       Applicera ALDRIG den informationen på NP i SVENSKA!
-     * För NP i SVENSKA vecka 47 (från Ellen Winroths e-postutskick "Viktig information kring vecka 47"):
-       - Titel: "{first_name}: Nationellt prov (NP) i Svenska"
-       - Samling och start: Kl. 08.15 i Matsalen!
-       - Lokal: "Matsalen"
-       - Beskrivning ska tydligt innehålla:
-         📌 Vad: Muntlig del av nationellt prov i svenska
-         ℹ️ Info från lärare: Den dag man ska genomföra sitt prov i svenska börjar man i matsalen kl. 08.15. Det är viktigt att komma i god tid innan förberedelsetiden i matsalen startar. Ni kommer att få lämna in era mobiler och smartklockor. I matsalen ges information om förberedelsen som sedan ska vara ett underlag för diskussionerna i respektive grupp. MYCKET VIKTIGT: Gruppernas redovisningstider kommer att sättas upp runt om i skolan. Ni måste ha koll på när just er grupp ska genomföra provet.
-         🔗 Källa: InfoMentor Veckobrev (Ellen Winroth) & Schema
+     * Om ett meddelande gäller ett prov i ett visst ämne (t.ex. prov i engelska i en viss lokal):
+       Applicera ALDRIG den informationen på prov i ett annat ämne (t.ex. prov i svenska)!
+     * När ett utskick eller veckobrev anger samlingstider, lokaler och instruktioner för en schemabrytande aktivitet (t.ex. samling kl 08:15 i matsalen med mobilinlämning, eller busstider till gymnasiemässa):
+       Använd den specifika tiden, samlingsplatsen och detaljerna i händelsens beskrivning och sätt lokal till den angivna platsen!
+     * Ange källa i formatet:
+       🔗 Källa: InfoMentor Veckobrev & Schema
 
 9. FORMAT:
    Svara ENDAST med ett giltigt JSON-objekt med strukturen:

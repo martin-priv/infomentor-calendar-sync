@@ -69,7 +69,7 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
         t = text.lower()
         return any(p in t for p in exclude_patterns)
 
-    # Child color mapping: "Adam:9,Isak:10,Leo:4" or default soft palette
+    # Child color mapping: "Barn1:9,Barn2:10,Barn3:4" or default soft palette
     # Google Calendar colors: 9=Blueberry (#5484ed), 10=Basil (#51b749), 4=Flamingo (#ff887c), 7=Peacock (#46d6db), 3=Grape (#dbadff)
     child_colors_config = {}
     raw_colors = os.environ.get("CHILD_COLORS", "")
