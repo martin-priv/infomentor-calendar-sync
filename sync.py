@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from infomentor_client import InfomentorClient
 from ai_agent import InfomentorAIAgent
 from google_calendar_client import GoogleCalendarClient
+from gmail_client import GmailClient
 
 SUBJECT_MAP = {
     "BL": "Bild",
@@ -120,6 +121,14 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
 
     all_synthesized_events = []
 
+    # Optional: Fetch recent school emails via Gmail IMAP
+    gmail_client = GmailClient()
+    school_emails = []
+    if gmail_client.is_configured():
+        print(f"\n📧 Fetching recent school emails from Gmail ({gmail_client.sender_filter})...")
+        school_emails = gmail_client.get_recent_emails(days_back=10, max_emails=8)
+        print(f"   Found {len(school_emails)} recent school emails.")
+
     # Step 4: Loop through pupils
     for child_idx, pupil in enumerate(client.pupils):
         full_name = pupil["name"]
@@ -207,7 +216,8 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
             calendar_entries=cal_entries,
             uols=uols[:5],
             messages=raw_msgs,
-            schedule_by_day=sched_for_ai
+            schedule_by_day=sched_for_ai,
+            emails=school_emails
         )
 
         # Post-filter synthesized events

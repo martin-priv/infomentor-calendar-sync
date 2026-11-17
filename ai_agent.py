@@ -112,10 +112,11 @@ class InfomentorAIAgent:
         uols: List[Dict[str, Any]],
         messages: List[Dict[str, Any]],
         existing_calendar_events: Optional[List[Dict[str, Any]]] = None,
-        schedule_by_day: Optional[Dict[str, List[str]]] = None
+        schedule_by_day: Optional[Dict[str, List[str]]] = None,
+        emails: Optional[List[Dict[str, Any]]] = None
     ) -> List[Dict[str, Any]]:
         """
-        Synthesizes raw calendar events, UOL study plans, teacher messages, and daily timetables
+        Synthesizes raw calendar events, UOL study plans, teacher messages, school emails, and daily timetables
         into a coherent, high-value list of Google Calendar events.
         """
         # Prepare concise representation of input data
@@ -164,6 +165,17 @@ class InfomentorAIAgent:
                 "body": clean_html(m.get("body") or m.get("messageBody", ""))[:350]
             })
 
+        clean_emails = []
+        if emails:
+            for em in emails[:8]:
+                clean_emails.append({
+                    "id": em.get("id"),
+                    "date": em.get("date"),
+                    "sender": em.get("sender"),
+                    "subject": em.get("subject"),
+                    "body": (em.get("body") or "")[:450]
+                })
+
         # Extract first name cleanly (handles "Efternamn, Förnamn" as well as "Förnamn Efternamn")
         if "," in child_name:
             first_name = child_name.split(",")[1].strip()
@@ -173,7 +185,7 @@ class InfomentorAIAgent:
         prompt = f"""
 Du är en intelligent assistent som hjälper en familj att hålla ordning på skolaktiviteter i Google Calendar för eleven: {first_name}.
 
-INDATA FRÅN INFOMENTOR:
+INDATA FRÅN SKOLA OCH INFOMENTOR:
 1. KALENDERHÄNDELSER (prov, läxor, deadlines, aktiviteter):
 {json.dumps(clean_cal, ensure_ascii=False, indent=2)}
 
@@ -185,6 +197,9 @@ INDATA FRÅN INFOMENTOR:
 
 4. SCHEMA OCH LEKTIONSÖVERSIKT PER DAG:
 {json.dumps(schedule_by_day or {}, ensure_ascii=False, indent=2)}
+
+5. E-POST OCH VECKOBREV FRÅN SKOLAN (viktiga utskick och information om schemabrytande dagar, provgrupper, gymnasiemässa etc):
+{json.dumps(clean_emails, ensure_ascii=False, indent=2)}
 
 UPPGIFT:
 Skapa en sammanhållen, berikad lista av kalenderhändelser att synka till Google Calendar.
@@ -262,7 +277,13 @@ REGLER OCH RIKTLINJER:
    - Ange ett unikt `infomentor_id` för varje händelse så att vi kan uppdatera den utan dubbletter:
      T.ex. "cal_<id>" om baserad på kalenderpost, "msg_<id>" om baserad på meddelande, eller "uol_<id>".
 
-7. FORMAT:
+7. E-POST OCH VECKOBREV (PUNKT 5):
+   - Granska e-postmeddelandena från skolan noga. De innehåller ofta avgörande information om schemabrytande dagar, provgrupper (t.ex. vem som gör muntliga NP vilken tid), information om nationella prov i svenska/engelska, och gymnasiemässa.
+   - Använd e-posten för att:
+     a) Förstå vad generella schemapass som "Schemabrytande: NP" faktiskt handlar om (t.ex. om ett mail anger att åk 9 genomför muntliga NP i svenska vecka 47 och samlas kl 08:15 i matsalen).
+     b) Skapa eller korrigera provhändelser med rätt ämne, tider och grupper för eleven {first_name}.
+
+8. FORMAT:
    Svara ENDAST med ett giltigt JSON-objekt med strukturen:
    {{
      "events": [
