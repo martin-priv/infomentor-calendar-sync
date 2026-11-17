@@ -42,7 +42,7 @@ def run_sync(child_filter: str = None, dry_run: bool = False, days_ahead: int = 
     env_path = os.path.join(os.path.dirname(__file__), ".env")
     load_dotenv(env_path)
 
-    sync_days = days_ahead or int(os.environ.get("SYNC_DAYS_AHEAD", "7"))
+    sync_days = days_ahead or int(os.environ.get("SYNC_DAYS_AHEAD", "14"))
 
     im_user = os.environ.get("INFOMENTOR_USERNAME")
     im_pass = os.environ.get("INFOMENTOR_PASSWORD")

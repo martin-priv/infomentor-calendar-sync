@@ -16,16 +16,23 @@ Headless Python-tjänst som pollar **InfoMentor** för barnens aktiviteter, sche
      - `#/timetable` (Schemat: varje lektion, tider, salar och lärare)
      - `#/uolv2` (Planeringar: provområden, kapitel och vad eleven ska plugga på)
      - `#/message` (Lärarmeddelanden: inställda lektioner, sena starter, packlistor)
+   - **Valfri Gmail-integration:** Kan även läsa in e-post och veckobrev från skolan (`noreply-se@system.infomentor.se`) för att fånga schemabrytande information, gymnasiemässa och provgrupper som inte finns i InfoMentors scheman. **Helt valfritt** – om variablerna inte anges hoppas steget automatiskt över.
    - Stödjer **OpenAI** (`gpt-4o-mini`, `gpt-4o`) samt **Google Gemini** (`gemini-flash-latest`), eller lokala modeller via **Ollama / LiteLLM / Groq / DeepSeek** (alla OpenAI-kompatibla endpoints).
    - **Smart lektionsplacering:** Matchar prov och glosläxor mot lektionsschemat så att de hamnar på exakt rätt lektionspass istället för oprecisa heldagar. Lärarmeddelanden ges företräde för specifika tider och salar.
 
-3. **Kompakta dagliga skoltider:**
+3. **Pastellfärg per barn & Skolöversikt:**
+   - Varje barn tilldelas automatiskt en egen tydlig färg i Google Calendar (mjuk palett med bra kontrast mot vit text, t.ex. Blåbär, Basilika, Flamingo). Kan även konfigureras manuellt via `CHILD_COLORS`.
    - Genererar en diskret, sammanfattande 15-minuters rad vid skolstarten (t.ex. `Isak: Skola 08:00–14:05`) med hela dagens schema i beskrivningen (ämnen, tider, salar, lärare), vilket håller kalendern ren och luftig.
 
-4. **Exkluderingsfilter & Auto-Purge:**
-   - Filtrerar bort schemalagda drop-in-studiestugor och rutiner (t.ex. `Studion öppen`) och raderar automatiskt eventuella matchande händelser som tidigare synkats till Google Calendar.
+4. **Respektera manuella ändringar (Alternative A):**
+   - Om du manuellt flyttar en tid, byter titel eller redigerar beskrivningen i Google Calendar känner skriptet av det och **skriver inte över dina ändringar**.
+   - Om du raderar en händelse i kalendern återskapas den inte vid framtida körningar. Du kan även låsa en händelse explicit genom att lägga till 🔒 eller `[manuell]` i titeln.
 
-5. **Google Calendar API Integration:**
+5. **Exkluderingsfilter & Auto-Purge:**
+   - Filtrerar bort schemalagda drop-in-studiestugor och rutiner (t.ex. `Studion öppen`) och raderar automatiskt eventuella matchande händelser som tidigare synkats till Google Calendar.
+   - Rensar automatiskt bort eventuella dubbletter.
+
+6. **Google Calendar API Integration:**
    - Ansluter via Service Account och skriver direkt till kalendern.
    - **Idempotent:** Taggar händelser med unika `infomentor_id` via Google Calendars `extendedProperties`.
    - Inga dubbletter – befintliga händelser uppdateras sömlöst om schemat eller instruktionerna ändras.
@@ -70,6 +77,16 @@ OPENAI_MODEL=gpt-4o-mini
 SYNC_DAYS_AHEAD=14
 EXCLUDE_PATTERNS=Studion öppen
 SYNC_SCHOOL_HOURS=true
+
+# Färger per barn (Valfritt - tilldelas annars mjuk pastellpalett automatiskt)
+# CHILD_COLORS=Adam:9,Isak:10,Leo:4
+
+# Gmail-integration (VALFRITT - läser e-post/veckobrev från skolan)
+# Lämna utkommenterat om du inte vill koppla Gmail.
+# För att skapa ett applösenord: Google-konto -> Säkerhet -> Tvåstegsverifiering -> Applösenord
+# GMAIL_USER=din_epost@gmail.com
+# GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
+# GMAIL_SENDER=noreply-se@system.infomentor.se
 ```
 
 ---
